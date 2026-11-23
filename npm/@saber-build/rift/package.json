@@ -1,11 +1,11 @@
 {
   "name": "@saber-build/rift",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Fast copy-on-write development workspaces",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saber-build/rift.git"
+    "url": "git+https://github.com/collaborationlabs/rift.git"
   },
   "type": "module",
   "bin": {
