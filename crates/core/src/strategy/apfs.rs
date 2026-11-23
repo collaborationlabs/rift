@@ -48,17 +48,16 @@ fn clone_filtered_directory_apfs(from: &Path, to: &Path, filter: &CopyFilter) ->
             directories.push((source.to_path_buf(), destination));
         } else if file_type.is_file() {
             let key = (metadata.dev(), metadata.ino());
-            if metadata.nlink() > 1 {
-                if let Some(existing) = hard_links.get(&key) {
-                    fs::hard_link(existing, &destination)?;
-                } else {
-                    clone_path_apfs(source, &destination)?;
-                    hard_links.insert(key, destination.clone());
-                }
-            } else {
-                clone_path_apfs(source, &destination)?;
+            // A further link shares the inode whose metadata the first one already copied.
+            if let Some(existing) = hard_links.get(&key) {
+                fs::hard_link(existing, &destination)?;
+                continue;
             }
-            copy_metadata_apfs(source, &destination, MetadataTarget::FileOrDirectory)?;
+            clone_path_apfs(source, &destination)?;
+            if metadata.nlink() > 1 {
+                hard_links.insert(key, destination.clone());
+            }
+            copy_metadata_apfs(source, &destination, MetadataTarget::ClonedFile)?;
         } else if file_type.is_symlink() {
             std::os::unix::fs::symlink(fs::read_link(source)?, &destination)?;
             copy_metadata_apfs(source, &destination, MetadataTarget::Symlink)?;
@@ -67,9 +66,9 @@ fn clone_filtered_directory_apfs(from: &Path, to: &Path, filter: &CopyFilter) ->
         }
     }
     for (source, destination) in directories.into_iter().rev() {
-        copy_metadata_apfs(&source, &destination, MetadataTarget::FileOrDirectory)?;
+        copy_metadata_apfs(&source, &destination, MetadataTarget::Directory)?;
     }
-    copy_metadata_apfs(from, to, MetadataTarget::FileOrDirectory)?;
+    copy_metadata_apfs(from, to, MetadataTarget::Directory)?;
     Ok(())
 }
 
@@ -94,9 +93,16 @@ fn clone_path_apfs(from: &Path, to: &Path) -> Result<()> {
     )))
 }
 
+// macOS refuses `setxattr` on an entry without write permission, and most
+// files carry an attribute (`com.apple.provenance`), so extended attributes
+// never go onto an entry that already has a read-only mode.
 #[derive(Clone, Copy)]
 enum MetadataTarget {
-    FileOrDirectory,
+    // `clonefile` already gave it the source's extended attributes, along
+    // with its mode.
+    ClonedFile,
+    // made empty by `create_dir`: its attributes go on before its mode.
+    Directory,
     Symlink,
 }
 
@@ -110,10 +116,12 @@ fn copy_metadata_apfs(from: &Path, to: &Path, target: MetadataTarget) -> Result<
     if unsafe { libc::lchown(destination.as_ptr(), metadata.uid(), metadata.gid()) } != 0 {
         return Err(std::io::Error::last_os_error().into());
     }
-    if matches!(target, MetadataTarget::FileOrDirectory) {
+    if !matches!(target, MetadataTarget::ClonedFile) {
+        copy_xattrs_apfs(from, to)?;
+    }
+    if !matches!(target, MetadataTarget::Symlink) {
         fs::set_permissions(to, fs::Permissions::from_mode(metadata.mode()))?;
     }
-    copy_xattrs_apfs(from, to)?;
     let times = [
         libc::timespec {
             tv_sec: metadata.atime(),
@@ -366,5 +374,87 @@ mod tests {
             fs::read_to_string(destination.join("dist/bundle.js")).unwrap(),
             "bundle"
         );
+    }
+
+    fn set_xattr(path: &Path, name: &str, value: &[u8]) {
+        let path = c_path(path).unwrap();
+        let name = std::ffi::CString::new(name).unwrap();
+        // SAFETY: `path`, `name`, and `value` are valid for the duration of the call.
+        let result = unsafe {
+            libc::setxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                libc::XATTR_NOFOLLOW,
+            )
+        };
+        assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+    }
+
+    fn xattr_len(path: &Path, name: &str) -> isize {
+        let path = c_path(path).unwrap();
+        let name = std::ffi::CString::new(name).unwrap();
+        // SAFETY: a null buffer with size 0 asks the kernel for the value's length.
+        unsafe {
+            libc::getxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                libc::XATTR_NOFOLLOW,
+            )
+        }
+    }
+
+    // Git's objects are read-only, and macOS gives most files an attribute
+    // (`com.apple.provenance`): a nested repository is enough to meet both.
+    #[test]
+    fn filtered_strategy_copies_read_only_entries_with_xattrs() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        let locked = source.join("locked");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&locked).unwrap();
+        let file = locked.join("object");
+        fs::write(&file, "blob").unwrap();
+        fs::hard_link(&file, locked.join("object-link")).unwrap();
+        for path in [&file, &locked] {
+            set_xattr(path, "com.example.tag", b"kept");
+        }
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o444)).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let copied = ApfsStrategy.copy_directory(
+            &source,
+            &destination,
+            CopyMode::Filtered,
+            &CopyFilter::default(),
+        );
+        // lets TempDir remove both trees, whatever the copy did
+        for dir in [&locked, &destination.join("locked")] {
+            if dir.exists() {
+                fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        copied.unwrap();
+
+        let copied_file = destination.join("locked/object");
+        assert_eq!(fs::read_to_string(&copied_file).unwrap(), "blob");
+        assert_eq!(
+            fs::metadata(&copied_file).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
+        assert_eq!(
+            fs::metadata(&copied_file).unwrap().ino(),
+            fs::metadata(destination.join("locked/object-link"))
+                .unwrap()
+                .ino()
+        );
+        assert_eq!(xattr_len(&copied_file, "com.example.tag"), 4);
+        assert_eq!(xattr_len(&destination.join("locked"), "com.example.tag"), 4);
     }
 }
