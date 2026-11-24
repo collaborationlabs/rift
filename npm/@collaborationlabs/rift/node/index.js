@@ -14,8 +14,8 @@ const libraryPath = path.join(root, "prebuilds", `${platform}-${arch}`, libraryN
 if (!fs.existsSync(libraryPath)) throw new Error(`Unable to locate the Rift Node library for ${platform}-${arch}. Reinstall @collaborationlabs/rift.`)
 
 const { functions } = dlopen(libraryPath, {
-  rift_ffi_call: { parameters: ["string"], result: "pointer" },
-  rift_ffi_free: { parameters: ["pointer"], result: "void" },
+  rift_ffi_call: { arguments: ["string"], return: "pointer" },
+  rift_ffi_free: { arguments: ["pointer"], return: "void" },
 })
 
 function call(request) {
