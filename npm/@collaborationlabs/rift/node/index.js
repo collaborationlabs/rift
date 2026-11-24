@@ -11,11 +11,11 @@ if (!platform || !arch) throw new Error(`Unsupported Rift platform: ${os.platfor
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const libraryName = platform === "windows" ? "rift_ffi.dll" : platform === "darwin" ? "librift_ffi.dylib" : "librift_ffi.so"
 const libraryPath = path.join(root, "prebuilds", `${platform}-${arch}`, libraryName)
-if (!fs.existsSync(libraryPath)) throw new Error(`Unable to locate the Rift Node library for ${platform}-${arch}. Reinstall @saber-build/rift.`)
+if (!fs.existsSync(libraryPath)) throw new Error(`Unable to locate the Rift Node library for ${platform}-${arch}. Reinstall @collaborationlabs/rift.`)
 
 const { functions } = dlopen(libraryPath, {
-  rift_ffi_call: { parameters: ["string"], result: "pointer" },
-  rift_ffi_free: { parameters: ["pointer"], result: "void" },
+  rift_ffi_call: { arguments: ["string"], return: "pointer" },
+  rift_ffi_free: { arguments: ["pointer"], return: "void" },
 })
 
 function call(request) {

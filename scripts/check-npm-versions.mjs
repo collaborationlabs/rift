@@ -9,8 +9,13 @@ if (!version) {
   process.exit(1)
 }
 
-for (const entry of fs.readdirSync("npm")) {
-  const manifestPath = path.join("npm", entry, "package.json")
+// A scoped package sits one folder deeper, under its scope: npm/@scope/name.
+const packageDirs = fs.readdirSync("npm").flatMap((entry) =>
+  entry.startsWith("@") ? fs.readdirSync(path.join("npm", entry)).map((name) => path.join("npm", entry, name)) : [path.join("npm", entry)],
+)
+
+for (const dir of packageDirs) {
+  const manifestPath = path.join(dir, "package.json")
   if (!fs.existsSync(manifestPath)) continue
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
   if (manifest.version !== version) {
