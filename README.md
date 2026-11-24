@@ -15,9 +15,9 @@ more support soon
 ## Install
 
 ```bash
-npm install -g @saber-build/rift
+npm install -g @collaborationlabs/rift
 # or
-bun add -g @saber-build/rift
+bun add -g @collaborationlabs/rift
 ```
 
 Release archives are available from [GitHub Releases](https://github.com/anomalyco/rift/releases/latest).
@@ -150,7 +150,7 @@ Default created-workspace storage is adjacent to the registered source root:
 The package selects a Bun or Node FFI binding through conditional exports.
 
 ```ts
-import { create, list, remove, gc } from "@saber-build/rift";
+import { create, list, remove, gc } from "@collaborationlabs/rift";
 
 const workspace = create({ from: process.cwd(), name: "schema-work" });
 console.log(list({ of: process.cwd() }));

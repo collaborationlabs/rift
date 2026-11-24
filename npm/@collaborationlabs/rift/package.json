@@ -1,5 +1,5 @@
 {
-  "name": "@saber-build/rift",
+  "name": "@collaborationlabs/rift",
   "version": "0.0.14",
   "description": "Fast copy-on-write development workspaces",
   "license": "MIT",

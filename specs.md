@@ -237,7 +237,7 @@ The project ships four interfaces backed by the same implementation and metadata
 
 The CLI and language bindings should remain thin and expose the same API semantics as the native library.
 
-The npm launcher package publishes as `@saber-build/rift` and bundles prebuilt CLI binaries and FFI shared libraries for every supported target under `prebuilds/<platform>-<arch>/`. It must not require install lifecycle scripts; its CLI shim resolves the bundled executable at runtime, and conditional exports make `import "@saber-build/rift"` select the Bun or experimental Node FFI binding automatically.
+The npm launcher package publishes as `@collaborationlabs/rift` and bundles prebuilt CLI binaries and FFI shared libraries for every supported target under `prebuilds/<platform>-<arch>/`. It must not require install lifecycle scripts; its CLI shim resolves the bundled executable at runtime, and conditional exports make `import "@collaborationlabs/rift"` select the Bun or experimental Node FFI binding automatically.
 
 For CLI ergonomics, the primary workspace path for `rift init`, `rift create`, `rift remove`, `rift list`, and `rift ancestors` defaults to the current working directory when it is omitted. Workspace operations locate their root by searching upward for its `.rift` marker. The CLI applies similar selection before calling exact-path core `init`, unless `rift init --here` is explicitly requested.
 
